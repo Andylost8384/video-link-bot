@@ -37,7 +37,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_db(db)
         bot_username = (await context.bot.get_me()).username
         share_link = f"https://t.me/{bot_username}?start={file_id}"
-        await update.message.reply_text(f"✅ Your File Stored!
+        await update.message.reply_text(f"✅ Your File Stored!")
 
 🔗 Link: {share_link}")
 
