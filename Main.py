@@ -39,7 +39,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         share_link = f"https://t.me/{bot_username}?start={file_id}"
         await update.message.reply_text(f"✅ Your File Stored!")
 
-🔗 Link: {share_link}")
+await update.message.reply_text(f"✅ Your File Stored!\n🔗 Link: {share_link}")
 
 app = ApplicationBuilder().token(os.environ.get("BOT_TOKEN")).build()
 app.add_handler(CommandHandler("start", start))
