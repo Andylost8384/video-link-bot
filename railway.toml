@@ -1,5 +1,5 @@
 [build]
-builder = "NIXPACKS"
+start = "python Main.py"
 
 [build.nixpacks]
 languages = ["python"]
