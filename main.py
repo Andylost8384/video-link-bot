@@ -64,7 +64,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     remote_path = f"{file_unique_id}.mp4"
 
     # Upload to Supabase Storage
-    res_upload = supabase.storage.from_("your-bucket-name").upload(remote_path, file_bytes, {"content-type": "video/mp4", "upsert": True})
+    res_upload = supabase.storage.from_("videos").upload(remote_path, file_bytes, {"content-type": "video/mp4", "upsert": True})
     print(f"Upload response: {res_upload}")
 
     # Insert metadata to table
