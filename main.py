@@ -10,7 +10,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://bpljpoguhubrrkxkfccs.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "your-service-role-key")  # Service Role key recommended
 
-bucket_name = "uploads"  # Apna bucket name daalo
+bucket_name = "videos"  # Apna bucket name daalo
 table_name = "files"    # Apna table name daalo
 
 headers = {
