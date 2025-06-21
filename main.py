@@ -1,35 +1,34 @@
 import os
-import json
-from datetime import datetime
+from fastapi import FastAPI, Request, Response
+from telegram import Update, Bot
+from telegram.ext import Application, ContextTypes
+from telegram.ext import CommandHandler, MessageHandler, filters
+import asyncio
 import httpx
-from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
+from datetime import datetime
 
-# ENV variables
-BOT_TOKEN = "7188831975:AAFIslQ4OaatfRc5J6UO804GQerV1D4JqL0"  # Naya token yahan daala
+BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://bpljpoguhubrrkxkfccs.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "your-service-role-key")  # Service Role key rakho
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "your-service-role-key")
+bucket_name = "videos"
+table_name = "files"
 
-bucket_name = "videos"  # Apna bucket name daalo
-table_name = "files"    # Apna table name daalo
+app = FastAPI()
+bot = Bot(token=BOT_TOKEN)
+application = Application.builder().bot(bot).build()
 
+# Supabase headers for REST calls
 headers = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
 }
 
-# Start command
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Send me a video and I will give you a private streaming/download link!")
-
-# Helper function: Upload file bytes to Supabase Storage
 async def upload_file_to_supabase(file_bytes: bytes, remote_path: str):
     url = f"{SUPABASE_URL}/storage/v1/object/{bucket_name}/{remote_path}"
     async with httpx.AsyncClient() as client:
         res = await client.post(url, headers=headers, content=file_bytes)
     return res
 
-# Helper function: Insert metadata into Supabase table
 async def insert_metadata_to_supabase(file_unique_id: str, file_id: str):
     url = f"{SUPABASE_URL}/rest/v1/{table_name}"
     insert_headers = {
@@ -46,7 +45,10 @@ async def insert_metadata_to_supabase(file_unique_id: str, file_id: str):
         res = await client.post(url, headers=insert_headers, json=json_data)
     return res
 
-# Handle video or document video
+# Handlers
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("👋 Send me a video and I will give you a private streaming/download link!")
+
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = update.message.video or update.message.document
     if not file:
@@ -55,11 +57,9 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     file_id = file.file_id
     file_unique_id = file.file_unique_id
-    print(f"Received file_id: {file_id}, unique_id: {file_unique_id}")
 
     file_obj = await context.bot.get_file(file_id)
     file_bytes = await file_obj.download_as_bytearray()
-    print(f"Downloaded {len(file_bytes)} bytes")
 
     remote_path = f"{file_unique_id}.mp4"
 
@@ -69,7 +69,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Upload failed: {res_upload.text}")
         return
 
-    # Insert metadata to Supabase Table
+    # Insert metadata
     res_insert = await insert_metadata_to_supabase(file_unique_id, file_id)
     if res_insert.status_code not in (200, 201):
         await update.message.reply_text(f"⚠️ Metadata insert failed: {res_insert.text}")
@@ -79,18 +79,13 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     share_link = f"https://t.me/{bot_username}?start={file_unique_id}"
     await update.message.reply_text(f"✅ Your file has been saved!\n🔗 Link: {share_link}")
 
-# Start via link
 async def start_with_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args:
         file_uid = context.args[0]
-
-        # Query Supabase table for file_id by unique id
         url = f"{SUPABASE_URL}/rest/v1/{table_name}?id=eq.{file_uid}"
         query_headers = {
             **headers,
             "Accept": "application/json",
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
         }
         async with httpx.AsyncClient() as client:
             res = await client.get(url, headers=query_headers)
@@ -102,12 +97,26 @@ async def start_with_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await start(update, context)
 
-def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start_with_file))
-    app.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video))
-    app.run_polling()
+# Register handlers to application
+application.add_handler(CommandHandler("start", start_with_file))
+application.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video))
+
+@app.post(f"/webhook/{BOT_TOKEN}")
+async def telegram_webhook(req: Request):
+    json_update = await req.json()
+    update = Update.de_json(json_update, bot)
+    await application.process_update(update)
+    return Response(status_code=200)
+
+@app.on_event("startup")
+async def on_startup():
+    webhook_url = f"https://YOUR_PUBLIC_URL/webhook/{BOT_TOKEN}"  # <-- Replace with your public HTTPS URL from Railway
+    await bot.set_webhook(webhook_url)
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    await bot.delete_webhook()
 
 if __name__ == "__main__":
-    main()
-
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
