@@ -1,35 +1,34 @@
 import os
-import json
 from datetime import datetime
 import httpx
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 
-# ENV variables
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://bpljpoguhubrrkxkfccs.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "your-service-role-key")  # Service Role key recommended
+# ✅ Static Configs
+BOT_TOKEN = "7188831975:AAH3lwvnnlwQQDeTWvVGmebqR5Oos7EmP9U"
+SUPABASE_URL = "https://bpljpoguhubrrkxkfccs.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwbGpwb2d1aHVicnJreGtmY2NzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA0OTkyODgsImV4cCI6MjA2NjA3NTI4OH0.R2HPhC4ivM7lCQ3cwP52IW6EaXzN-xtaDW_OzjaV8qE"
 
-bucket_name = "videos"  # Apna bucket name daalo
-table_name = "files"    # Apna table name daalo
+bucket_name = "videos"
+table_name = "files"
 
 headers = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
 }
 
-# Start command
+# 🟢 Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👋 Send me a video and I will give you a private streaming/download link!")
 
-# Helper function: Upload file bytes to Supabase Storage
+# 📤 Upload video to Supabase Storage
 async def upload_file_to_supabase(file_bytes: bytes, remote_path: str):
     url = f"{SUPABASE_URL}/storage/v1/object/{bucket_name}/{remote_path}"
     async with httpx.AsyncClient() as client:
         res = await client.post(url, headers=headers, content=file_bytes)
     return res
 
-# Helper function: Insert metadata into Supabase table
+# 🗂️ Save metadata to Supabase Table
 async def insert_metadata_to_supabase(file_unique_id: str, file_id: str):
     url = f"{SUPABASE_URL}/rest/v1/{table_name}"
     insert_headers = {
@@ -38,7 +37,7 @@ async def insert_metadata_to_supabase(file_unique_id: str, file_id: str):
         "Prefer": "return=representation",
     }
     json_data = {
-        "id": file_unique_id,          # assuming your table's primary key is 'id'
+        "id": file_unique_id,
         "file_id": file_id,
         "created_at": datetime.utcnow().isoformat() + "Z",
     }
@@ -46,7 +45,7 @@ async def insert_metadata_to_supabase(file_unique_id: str, file_id: str):
         res = await client.post(url, headers=insert_headers, json=json_data)
     return res
 
-# Handle video or document video
+# 📩 Handle file uploads from user
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = update.message.video or update.message.document
     if not file:
@@ -55,44 +54,15 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     file_id = file.file_id
     file_unique_id = file.file_unique_id
-    print(f"Received file_id: {file_id}, unique_id: {file_unique_id}")
-
     file_obj = await context.bot.get_file(file_id)
     file_bytes = await file_obj.download_as_bytearray()
-    print(f"Downloaded {len(file_bytes)} bytes")
-
     remote_path = f"{file_unique_id}.mp4"
 
-    # Upload to Supabase Storage
-    res_upload = supabase.storage.from_("videos").upload(remote_path, file_bytes, {"content-type": "video/mp4", "upsert": True})
-    print(f"Upload response: {res_upload}")
-
-    # Insert metadata to table
-    res_insert = supabase.table("files").insert({
-        "file_id": file_id,
-        "file_unique_id": file_unique_id
-    }).execute()
-    print(f"Insert response: {res_insert}")
-
-    bot_username = (await context.bot.get_me()).username
-    share_link = f"https://t.me/{bot_username}?start={file_unique_id}"
-    await update.message.reply_text(f"✅ Your file has been saved!\n🔗 Link: {share_link}")
-
-
-    # Download file bytes from Telegram
-    file_obj = await context.bot.get_file(file_id)
-    file_bytes = await file_obj.download_as_bytearray()
-
-    # Prepare remote path (you can organize as you want)
-    remote_path = f"{file_unique_id}.mp4"  # Or any extension depending on your file
-
-    # Upload file to Supabase Storage
     res_upload = await upload_file_to_supabase(file_bytes, remote_path)
     if res_upload.status_code not in (200, 201):
         await update.message.reply_text(f"❌ Upload failed: {res_upload.text}")
         return
 
-    # Insert metadata to Supabase Table
     res_insert = await insert_metadata_to_supabase(file_unique_id, file_id)
     if res_insert.status_code not in (200, 201):
         await update.message.reply_text(f"⚠️ Metadata insert failed: {res_insert.text}")
@@ -100,23 +70,20 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     bot_username = (await context.bot.get_me()).username
     share_link = f"https://t.me/{bot_username}?start={file_unique_id}"
-    await update.message.reply_text(f"✅ Your file has been saved!\n🔗 Link: {share_link}")
+    await update.message.reply_text(f"✅ File saved!\n🔗 Your private link:\n{share_link}")
 
-# Start via link
+# 🔗 Handle /start?file_id link
 async def start_with_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args:
         file_uid = context.args[0]
-
-        # Query Supabase table for file_id by unique id
         url = f"{SUPABASE_URL}/rest/v1/{table_name}?id=eq.{file_uid}"
         query_headers = {
             **headers,
-            "Accept": "application/json",
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Accept": "application/json"
         }
         async with httpx.AsyncClient() as client:
             res = await client.get(url, headers=query_headers)
+
         if res.status_code == 200 and res.json():
             file_id = res.json()[0].get("file_id")
             await update.message.reply_video(file_id)
@@ -125,6 +92,7 @@ async def start_with_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await start(update, context)
 
+# 🚀 Launch bot
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start_with_file))
