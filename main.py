@@ -55,6 +55,29 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     file_id = file.file_id
     file_unique_id = file.file_unique_id
+    print(f"Received file_id: {file_id}, unique_id: {file_unique_id}")
+
+    file_obj = await context.bot.get_file(file_id)
+    file_bytes = await file_obj.download_as_bytearray()
+    print(f"Downloaded {len(file_bytes)} bytes")
+
+    remote_path = f"{file_unique_id}.mp4"
+
+    # Upload to Supabase Storage
+    res_upload = supabase.storage.from_("your-bucket-name").upload(remote_path, file_bytes, {"content-type": "video/mp4", "upsert": True})
+    print(f"Upload response: {res_upload}")
+
+    # Insert metadata to table
+    res_insert = supabase.table("files").insert({
+        "file_id": file_id,
+        "file_unique_id": file_unique_id
+    }).execute()
+    print(f"Insert response: {res_insert}")
+
+    bot_username = (await context.bot.get_me()).username
+    share_link = f"https://t.me/{bot_username}?start={file_unique_id}"
+    await update.message.reply_text(f"✅ Your file has been saved!\n🔗 Link: {share_link}")
+
 
     # Download file bytes from Telegram
     file_obj = await context.bot.get_file(file_id)
