@@ -54,16 +54,23 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     file_id = file.file_id
     file_unique_id = file.file_unique_id
+    print("[DEBUG] file_id:", file_id, "file_unique_id:", file_unique_id)
+
     file_obj = await context.bot.get_file(file_id)
     file_bytes = await file_obj.download_as_bytearray()
-    remote_path = f"{file_unique_id}.mp4"
+    print("[DEBUG] downloaded bytes length:", len(file_bytes))
 
+    remote_path = f"{file_unique_id}.mp4"
     res_upload = await upload_file_to_supabase(file_bytes, remote_path)
+    print("[DEBUG] upload status:", res_upload.status_code, res_upload.text)
+
     if res_upload.status_code not in (200, 201):
         await update.message.reply_text(f"❌ Upload failed: {res_upload.text}")
         return
 
     res_insert = await insert_metadata_to_supabase(file_unique_id, file_id)
+    print("[DEBUG] insert status:", res_insert.status_code, res_insert.text)
+
     if res_insert.status_code not in (200, 201):
         await update.message.reply_text(f"⚠️ Metadata insert failed: {res_insert.text}")
         return
@@ -71,6 +78,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_username = (await context.bot.get_me()).username
     share_link = f"https://t.me/{bot_username}?start={file_unique_id}"
     await update.message.reply_text(f"✅ File saved!\n🔗 Your private link:\n{share_link}")
+
 
 # 🔗 Handle /start?file_id link
 async def start_with_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
